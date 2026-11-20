@@ -29,20 +29,23 @@ export async function validateStaticSources(wasm, files) {
     } catch {
       return corruptData("static", path, "invalid_json_or_encoding");
     }
-    if (path.startsWith("scene_assets/")) {
-      const name = path.slice("scene_assets/".length, -".json".length);
+    if (path.startsWith("assets/scene/") && path !== "assets/scene/scene_index.json") {
+      const name = path.slice("assets/scene/".length, -".json".length);
       const scene = JSON.parse(wasm.validate_scene(text, name));
       if (!scene.ok) return corruptData("scene", path, scene.error);
     }
   }
   const config = decoded.get("runtime_config.json");
-  const index = decoded.get("scene_index.json");
+  const index = decoded.get("assets/scene/scene_index.json");
   if (!config || !index || !Array.isArray(index.scenes)
       || index.scenes.some(entry => !entry || typeof entry.scene_name !== "string"))
     return corruptData("static", "runtime_config.json", "missing_config_or_index");
   const validated = await new SceneRuntime(wasm, {}).setIndex(index);
-  if (!validated.ok) return corruptData("scene", "scene_index.json", validated.error);
-  if (index.scenes.some(entry => !files.has("scene_assets/" + entry.scene_name + ".json"))
+  if (!validated.ok) return corruptData("scene", "assets/scene/scene_index.json", validated.error);
+  const sceneFiles = [...files.keys()].filter(path =>
+    path.startsWith("assets/scene/") && path !== "assets/scene/scene_index.json");
+  if (sceneFiles.length !== index.scenes.length
+      || index.scenes.some(entry => !files.has("assets/scene/" + entry.scene_name + ".json"))
       || (config.entry_scene !== null && !index.scenes.some(entry => entry.scene_name === config.entry_scene)))
     return corruptData("scene", "runtime_config.json", "unresolved_scene");
   return ok(null);

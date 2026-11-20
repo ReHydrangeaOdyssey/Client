@@ -14,6 +14,9 @@ export async function prepareDistribution({networkOnly = false, validateCandidat
     if (!entry || !localPath(entry.path) || !/^[a-f0-9]{64}$/.test(entry.sha256) || paths.has(entry.path)
         || !Number.isSafeInteger(entry.size_bytes) || entry.size_bytes < 0)
       return corruptData("manifest", "distribution.json", "invalid_reference_or_size");
+    if (entry.path.startsWith("assets/") && !["scene", "master_data", "quest", "fallback_assets"]
+        .some(kind => entry.path.startsWith("assets/" + kind + "/")))
+      return corruptData("manifest", entry.path, "unmanaged_asset_path");
     paths.add(entry.path);
   }
   const calculated = await boundary(() => digest(new TextEncoder().encode(JSON.stringify(manifest.files))));
@@ -35,10 +38,11 @@ export async function prepareDistribution({networkOnly = false, validateCandidat
     if (!validated.ok) return validated;
     // No existing file is touched until every candidate byte sequence has been verified.
     const cache = await caches.open("reorsg-static-" + manifest.version);
-    const directory = await opfsDirectory(["game"], true);
+    const directory = await opfsDirectory([], true);
     for (const entry of manifest.files) {
       const bytes = {value: staged.get(entry.path)};
-      const parts = entry.path.split("/");
+      const parts = entry.path.startsWith("assets/")
+        ? entry.path.split("/") : ["game", ...entry.path.split("/")];
       let parent = directory;
       for (const part of parts.slice(0, -1))
         parent = await parent.getDirectoryHandle(part, {create: true});

@@ -8,7 +8,8 @@ const MAX_ASSETS: usize = 1000;
 const MAX_SCENE_NAME_BYTES: usize = 120;
 
 pub fn valid_name(name: &str) -> bool {
-    name.len() <= MAX_SCENE_NAME_BYTES
+    name != "scene_index"
+        && name.len() <= MAX_SCENE_NAME_BYTES
         && name.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
         && name
             .bytes()

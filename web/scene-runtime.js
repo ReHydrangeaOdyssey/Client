@@ -22,7 +22,7 @@ export class SceneRuntime {
     const ids = new Set();
     const staged = new Map();
     for (const entry of index.scenes) {
-      if (!NAME.test(entry.scene_name) || names.has(entry.scene_name)) return fail("invalid Scene name");
+      if (entry.scene_name === "scene_index" || !NAME.test(entry.scene_name) || names.has(entry.scene_name)) return fail("invalid Scene name");
       const hashed = await boundary(() => digest(new TextEncoder().encode(entry.scene_name)));
       if (!hashed.ok) return hashed;
       // SceneID = the first 48 bits of the name SHA-256, interpreted big endian.
@@ -66,7 +66,7 @@ export class SceneRuntime {
   async #prepare(ticket) {
     const ready = await this.#adapters.checkEntry(ticket.name);
     if (!ready.ok) return ready;
-    const bytes = await fetchBytes("scene_assets/" + ticket.name + ".json");
+    const bytes = await fetchBytes("assets/scene/" + ticket.name + ".json");
     if (!bytes.ok) return bytes;
     const result = JSON.parse(this.#wasm.validate_scene(new TextDecoder().decode(bytes.value), ticket.name));
     if (!result.ok) return result;

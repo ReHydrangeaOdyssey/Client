@@ -27,11 +27,11 @@ def scenes(source, entry):
         return [], None
     entries = []
     ids = set()
-    target = DIST / "scene_assets"
-    target.mkdir(exist_ok=True)
+    target = DIST / "assets" / "scene"
+    target.mkdir(parents=True, exist_ok=True)
     for path in sorted(source.glob("*.json")):
         name = path.stem
-        if not SCENE_NAME.fullmatch(name):
+        if name == "scene_index" or not SCENE_NAME.fullmatch(name):
             raise ValueError("invalid scene filename")
         raw = path.read_bytes()
         if len(raw) > 8_000_000:
@@ -51,6 +51,7 @@ def scenes(source, entry):
     return entries, entry
 
 def write_json(name, value):
+    (DIST / name).parent.mkdir(parents=True, exist_ok=True)
     (DIST / name).write_text(json.dumps(value, ensure_ascii=False, separators=(",", ":")),
                              encoding="utf-8")
 
@@ -72,13 +73,13 @@ def main():
                         str(ROOT / "target/wasm32-unknown-unknown/release/reorsg_client.wasm")],
                        cwd=ROOT, check=True)
         entries, entry = scenes(args.scenes, args.entry)
-        write_json("scene_index.json", {"scenes": entries})
+        write_json("assets/scene/scene_index.json", {"scenes": entries})
         write_json("runtime_config.json", {"entry_scene": entry})
         files = [path for path in (ROOT / "web").iterdir() if path.is_file()]
         paths = [path.name for path in files]
         paths += ["pkg/reorsg_client.js", "pkg/reorsg_client_bg.wasm",
-                  "scene_index.json", "runtime_config.json"]
-        paths += ["scene_assets/" + item["scene_name"] + ".json" for item in entries]
+                  "assets/scene/scene_index.json", "runtime_config.json"]
+        paths += ["assets/scene/" + item["scene_name"] + ".json" for item in entries]
         manifest = [{"path": path, "size_bytes": (DIST / path).stat().st_size, "sha256": hashlib.sha256((DIST / path).read_bytes()).hexdigest()}
                     for path in sorted(paths)]
         version = hashlib.sha256(json.dumps(manifest, separators=(",", ":")).encode()).hexdigest()

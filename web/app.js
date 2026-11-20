@@ -35,7 +35,7 @@ async function start(networkOnly) {
   const config = JSON.parse(new TextDecoder().decode(configBytes.value));
   if (!config.entry_scene)
     return fail("シーンデータが未設定です。現仕様のシーン・素材データが揃うまでゲームを開始できません。");
-  const bytes = await fetchBytes("scene_assets/" + config.entry_scene + ".json");
+  const bytes = await fetchBytes("assets/scene/" + config.entry_scene + ".json");
   if (!bytes.ok) return bytes;
   const scene = JSON.parse(wasm.validate_scene(new TextDecoder().decode(bytes.value), config.entry_scene));
   if (!scene.ok) return fail("シーンデータを読み込めません: " + scene.error);
