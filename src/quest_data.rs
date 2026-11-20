@@ -68,18 +68,79 @@ impl SkillMapping {
         skills: &BTreeSet<u32>,
         conditions: &BTreeSet<u32>,
     ) -> Result<(), String> {
-        if !skills.contains(&self.skill1_id) {
+        if self.skill1_id == 0 || self.skill1_id == u32::MAX || !skills.contains(&self.skill1_id) {
             return Err("unknown Skill1".into());
         }
         match (self.skill2_id, self.skill2_condition_id) {
             (None, None) => Ok(()),
             (Some(skill), Some(condition))
-                if skills.contains(&skill) && conditions.contains(&condition) =>
+                if skill != 0
+                    && skill != u32::MAX
+                    && skills.contains(&skill)
+                    && conditions.contains(&condition) =>
             {
                 Ok(())
             }
             _ => Err("Skill2 mapping is incomplete or its condition is unbound".into()),
         }
+    }
+}
+
+/// Original CSV slots remain distinct even when Skill1 is not owned.
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CharacterLoadout {
+    pub skill: u32,
+    pub uf: u32,
+    pub tactics1: u32,
+    pub tactics2: u32,
+    pub characteristic: u32,
+    pub knight_skill: u32,
+    pub support_skill: u32,
+}
+
+impl CharacterLoadout {
+    pub fn skill_ids(&self) -> Vec<u32> {
+        [self.skill, self.uf]
+            .into_iter()
+            .filter(|id| *id != 0)
+            .collect()
+    }
+
+    pub fn tactics_ids(&self) -> Vec<u32> {
+        [self.tactics1, self.tactics2]
+            .into_iter()
+            .filter(|id| *id != 0)
+            .collect()
+    }
+
+    pub fn validate(&self, skills: &BTreeSet<u32>, tactics: &BTreeSet<u32>) -> Result<(), String> {
+        let ids = self.skill_ids();
+        if ids.is_empty() || ids.iter().any(|id| *id == u32::MAX || !skills.contains(id)) {
+            return Err("missing or unresolved owned Skill".into());
+        }
+        if self.tactics_ids().iter().any(|id| !tactics.contains(id)) {
+            return Err("unresolved owned Tactics".into());
+        }
+        // The three unused source columns are retained without inferred Ability mappings.
+        Ok(())
+    }
+
+    pub fn quest_mapping(&self, skill2_condition_id: Option<u32>) -> Result<SkillMapping, String> {
+        if self.skill == 0 || self.skill == u32::MAX {
+            return Err("Quest Skill1 slot is unavailable; Skill2 cannot replace it".into());
+        }
+        if self.uf == u32::MAX || (self.uf == 0 && skill2_condition_id.is_some()) {
+            return Err("invalid Skill2 slot or condition".into());
+        }
+        if self.uf != 0 && skill2_condition_id.is_none() {
+            return Err("Skill2 condition mapping is not yet supplied".into());
+        }
+        Ok(SkillMapping {
+            skill1_id: self.skill,
+            skill2_id: (self.uf != 0).then_some(self.uf),
+            skill2_condition_id,
+        })
     }
 }
 

@@ -8,3 +8,5 @@ pub mod scene;
 
 pub mod checkpoint;
 pub mod quest_runtime;
+
+pub mod master_source;

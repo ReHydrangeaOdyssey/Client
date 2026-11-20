@@ -35,3 +35,12 @@ pub fn validate_quest(text: &str, enemy_ids: &str, item_ids: &str) -> String {
         Ok(json!({"wave_count": waves.len()}))
     })())
 }
+
+#[wasm_bindgen]
+pub fn validate_skill_sources(text: &str) -> String {
+    response((|| {
+        let records: Vec<crate::master_source::SkillSource> = crate::json::parse(text)?;
+        crate::master_source::validate_skills(&records)?;
+        Ok(json!({"record_count": records.len()}))
+    })())
+}
