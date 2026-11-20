@@ -9,7 +9,7 @@ import sys
 import urllib.parse
 
 CLIENT_ROOT = pathlib.Path(__file__).resolve().parent.parent
-DEFAULT_PORT = 8080
+DEFAULT_PORT = 8443
 LOOPBACK_HOST = "127.0.0.1"
 PRIVATE_NETWORKS = tuple(ipaddress.IPv4Network(network) for network in
                          ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
