@@ -2,3 +2,7 @@
 
 /target/
 /dist/
+
+/assets/**
+!/assets/**/
+!/assets/**/.gitkeep
