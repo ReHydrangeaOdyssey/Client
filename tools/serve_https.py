@@ -85,6 +85,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                          "base-uri 'none'; frame-ancestors 'none'")
         super().end_headers()
 
+
+def report_startup_error(stage, error, host, port):
+    details = [type(error).__name__]
+    for field in ("winerror", "errno", "reason"):
+        value = getattr(error, field, None)
+        if value is not None:
+            details.append(f"{field}={value}")
+    print(f"HTTPS startup failed during {stage}: " + ", ".join(details),
+          file=sys.stderr)
+    if stage == "socket bind":
+        print(f"Cannot listen on {host}:{port}. Check existing listeners and "
+              "Windows portproxy/reserved-port settings.", file=sys.stderr)
+    else:
+        print("Verify the server certificate/key files and their format/matching pair.",
+              file=sys.stderr)
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("local", "lan"), default="local",
@@ -111,12 +127,20 @@ def main():
     try:
         # The TLS library reads the server pair; the local CA private key is never needed.
         context.load_cert_chain(str(args.cert), str(args.key))
-        handler = functools.partial(Handler, directory=str(root))
+    except OSError as error:
+        report_startup_error("certificate/key loading", error, host, args.port)
+        return 1
+    handler = functools.partial(Handler, directory=str(root))
+    try:
         server = LocalNetworkServer((host, args.port), handler, allowed_network)
+    except OSError as error:
+        report_startup_error("socket bind", error, host, args.port)
+        return 1
+    try:
         server.socket = context.wrap_socket(server.socket, server_side=True)
-    except (OSError, ssl.SSLError):
-        print("HTTPS startup failed: verify server certificate/key, directory and port.",
-              file=sys.stderr)
+    except OSError as error:
+        server.server_close()
+        report_startup_error("TLS socket setup", error, host, args.port)
         return 1
     print(f"HTTPS ({args.mode}): https://{host}:{args.port}/", file=sys.stderr)
     print(f"Allowed client subnet: {allowed_network}", file=sys.stderr)
