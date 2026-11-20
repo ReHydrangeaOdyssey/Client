@@ -20,15 +20,14 @@ def unique_object(pairs):
         result[key] = value
     return result
 
-def scenes(source, entry):
-    if source is None:
-        if entry:
-            raise ValueError("--entry requires --scenes")
-        return [], None
+def scenes(source, entry, *, write=True):
+    if not source.is_dir():
+        raise ValueError("Scene source directory does not exist: " + str(source))
     entries = []
     ids = set()
     target = DIST / "assets" / "scene"
-    target.mkdir(parents=True, exist_ok=True)
+    pending = []
+    mismatches = []
     for path in sorted(source.glob("*.json")):
         name = path.stem
         if name == "scene_index" or not SCENE_NAME.fullmatch(name):
@@ -38,16 +37,23 @@ def scenes(source, entry):
             raise ValueError("scene exceeds byte limit")
         data = json.loads(raw, object_pairs_hook=unique_object)
         if type(data.get("version")) is not int or data["version"] != 2 or data.get("scene") != name:
-            raise ValueError("scene name/version mismatch")
+            mismatches.append(f"{path.name} (expected version=2, scene={name})")
+            continue
         # SceneID = big-endian integer of SHA-256(UTF-8(name))[0:6].
         scene_id = int.from_bytes(hashlib.sha256(name.encode("utf-8")).digest()[:6], "big")
         if scene_id == 0 or scene_id in ids:
             raise ValueError("zero or colliding SceneID")
         ids.add(scene_id)
         entries.append({"scene_id": scene_id, "scene_name": name})
-        (target / path.name).write_bytes(raw)
+        pending.append((path.name, raw))
+    if mismatches:
+        raise ValueError("scene name/version mismatch: " + "; ".join(mismatches))
     if not entry or entry not in {item["scene_name"] for item in entries}:
         raise ValueError("--entry must identify a supplied Scene")
+    if write:
+        target.mkdir(parents=True, exist_ok=True)
+        for name, raw in pending:
+            (target / name).write_bytes(raw)
     return entries, entry
 
 def write_json(name, value):
@@ -57,10 +63,12 @@ def write_json(name, value):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--scenes", type=pathlib.Path)
-    parser.add_argument("--entry")
+    parser.add_argument("--scenes", type=pathlib.Path, default=ROOT / "assets" / "scene",
+                        help="Scene source directory (default: Client/assets/scene)")
+    parser.add_argument("--entry", default="title", help="Initial Scene name (default: title)")
     args = parser.parse_args()
     try:
+        scenes(args.scenes, args.entry, write=False)
         subprocess.run(["cargo", "build", "--offline", "--locked", "--release",
                         "--target", "wasm32-unknown-unknown"], cwd=ROOT, check=True)
         DIST.mkdir(exist_ok=True)
