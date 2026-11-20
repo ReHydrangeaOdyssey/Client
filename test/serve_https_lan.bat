@@ -10,7 +10,7 @@ if not defined REORSG_LAN_NETWORK set /p "REORSG_LAN_NETWORK=Allowed LAN subnet 
 if not defined REORSG_LAN_HOST goto missing_configuration
 if not defined REORSG_LAN_NETWORK goto missing_configuration
 
-python "%~dp0tools\serve_https.py" --mode lan --host "%REORSG_LAN_HOST%" --lan-network "%REORSG_LAN_NETWORK%" %*
+python "%~dp0..\tools\serve_https.py" --mode lan --host "%REORSG_LAN_HOST%" --lan-network "%REORSG_LAN_NETWORK%" %*
 set "SERVER_EXIT_CODE=%ERRORLEVEL%"
 if not "%SERVER_EXIT_CODE%"=="0" (
     echo.

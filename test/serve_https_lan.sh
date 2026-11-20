@@ -24,4 +24,4 @@ if command -v python >/dev/null 2>&1 && python -c 'import sys; sys.exit(sys.vers
 else
     python_command=python3
 fi
-exec "$python_command" "$script_dir/tools/serve_https.py" --mode lan --host "$lan_host" --lan-network "$lan_network" "$@"
+exec "$python_command" "$script_dir/../tools/serve_https.py" --mode lan --host "$lan_host" --lan-network "$lan_network" "$@"

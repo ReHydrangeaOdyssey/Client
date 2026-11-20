@@ -1,7 +1,7 @@
 @echo off
 setlocal
 rem Resolve the server relative to this launcher, regardless of the working directory.
-python "%~dp0tools\serve_https.py" --mode local %*
+python "%~dp0..\tools\serve_https.py" --mode local %*
 set "SERVER_EXIT_CODE=%ERRORLEVEL%"
 if not "%SERVER_EXIT_CODE%"=="0" (
     echo.
