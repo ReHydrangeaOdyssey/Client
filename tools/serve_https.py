@@ -2,13 +2,43 @@
 import argparse
 import functools
 import http.server
+import ipaddress
 import pathlib
 import ssl
 import sys
 import urllib.parse
 
 CLIENT_ROOT = pathlib.Path(__file__).resolve().parent.parent
-DEFAULT_PORT = 8443
+DEFAULT_PORT = 8080
+LOOPBACK_HOST = "127.0.0.1"
+PRIVATE_NETWORKS = tuple(ipaddress.IPv4Network(network) for network in
+                         ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+
+
+def resolve_binding(mode, host=None, lan_network=None):
+    if mode == "local":
+        if host not in (None, LOOPBACK_HOST) or lan_network is not None:
+            raise ValueError("Local mode only accepts 127.0.0.1 and no LAN network.")
+        return LOOPBACK_HOST, ipaddress.IPv4Network("127.0.0.1/32")
+    if mode != "lan" or host is None or lan_network is None:
+        raise ValueError("LAN mode requires --host and --lan-network.")
+    address = ipaddress.IPv4Address(host)
+    network = ipaddress.IPv4Network(lan_network, strict=True)
+    if not any(network.subnet_of(private) for private in PRIVATE_NETWORKS):
+        raise ValueError("LAN network must be inside an RFC1918 private IPv4 range.")
+    if address not in network or address in (network.network_address, network.broadcast_address):
+        raise ValueError("--host must be a usable address in --lan-network.")
+    return str(address), network
+
+
+class LocalNetworkServer(http.server.ThreadingHTTPServer):
+    def __init__(self, address, handler, allowed_network):
+        self.allowed_network = allowed_network
+        super().__init__(address, handler)
+
+    def verify_request(self, request, client_address):
+        return ipaddress.IPv4Address(client_address[0]) in self.allowed_network
+
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     extensions_map = {**http.server.SimpleHTTPRequestHandler.extensions_map,
@@ -57,12 +87,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--mode", choices=("local", "lan"), default="local",
+                        help="local: development machine only; lan: selected private subnet")
+    parser.add_argument("--host", help="Development machine IPv4 address; required in LAN mode")
+    parser.add_argument("--lan-network", help="Allowed LAN subnet, for example 192.168.1.0/24")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--directory", type=pathlib.Path, default=CLIENT_ROOT / "dist")
     parser.add_argument("--cert", type=pathlib.Path, default=CLIENT_ROOT / ".env/server.crt")
     parser.add_argument("--key", type=pathlib.Path, default=CLIENT_ROOT / ".env/server.key")
     args = parser.parse_args()
+    try:
+        host, allowed_network = resolve_binding(args.mode, args.host, args.lan_network)
+    except ValueError as error:
+        parser.error(str(error))
     root = args.directory.resolve()
     if not root.is_dir() or root == CLIENT_ROOT or root in CLIENT_ROOT.parents:
         parser.error("Select a built static directory, not the repository or its ancestors.")
@@ -75,13 +112,14 @@ def main():
         # The TLS library reads the server pair; the local CA private key is never needed.
         context.load_cert_chain(str(args.cert), str(args.key))
         handler = functools.partial(Handler, directory=str(root))
-        server = http.server.ThreadingHTTPServer((args.host, args.port), handler)
+        server = LocalNetworkServer((host, args.port), handler, allowed_network)
         server.socket = context.wrap_socket(server.socket, server_side=True)
     except (OSError, ssl.SSLError):
         print("HTTPS startup failed: verify server certificate/key, directory and port.",
               file=sys.stderr)
         return 1
-    print(f"Local HTTPS: https://{args.host}:{args.port}/", file=sys.stderr)
+    print(f"HTTPS ({args.mode}): https://{host}:{args.port}/", file=sys.stderr)
+    print(f"Allowed client subnet: {allowed_network}", file=sys.stderr)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
