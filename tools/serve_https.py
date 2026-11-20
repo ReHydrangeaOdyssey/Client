@@ -109,9 +109,16 @@ def main():
     parser.add_argument("--lan-network", help="Allowed LAN subnet, for example 192.168.1.0/24")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--directory", type=pathlib.Path, default=CLIENT_ROOT / "dist")
-    parser.add_argument("--cert", type=pathlib.Path, default=CLIENT_ROOT / ".env/server.crt")
-    parser.add_argument("--key", type=pathlib.Path, default=CLIENT_ROOT / ".env/server.key")
+    parser.add_argument("--cert", type=pathlib.Path,
+                        help="Server certificate; local defaults to .env/dev-local/server.crt")
+    parser.add_argument("--key", type=pathlib.Path,
+                        help="Server key; local defaults to .env/dev-local/server.key")
     args = parser.parse_args()
+    certificate_directory = CLIENT_ROOT / ".env"
+    if args.mode == "local":
+        certificate_directory /= "dev-local"
+    args.cert = args.cert or certificate_directory / "server.crt"
+    args.key = args.key or certificate_directory / "server.key"
     try:
         host, allowed_network = resolve_binding(args.mode, args.host, args.lan_network)
     except ValueError as error:
