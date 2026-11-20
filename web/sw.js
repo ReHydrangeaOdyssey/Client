@@ -25,6 +25,7 @@ self.addEventListener("message", event => {
 self.addEventListener("fetch", event => {
   if (event.request.method !== "GET" || new URL(event.request.url).origin !== self.location.origin) return;
   event.respondWith((async () => {
+    if (event.request.headers.get("X-ReORSG-Redownload") === "1") return fetch(event.request);
     const name = await activeCache();
     if (name) {
       const cache = await caches.open(name);

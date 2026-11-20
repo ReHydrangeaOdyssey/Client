@@ -79,7 +79,7 @@ def main():
         paths += ["pkg/reorsg_client.js", "pkg/reorsg_client_bg.wasm",
                   "scene_index.json", "runtime_config.json"]
         paths += ["scene_assets/" + item["scene_name"] + ".json" for item in entries]
-        manifest = [{"path": path, "sha256": hashlib.sha256((DIST / path).read_bytes()).hexdigest()}
+        manifest = [{"path": path, "size_bytes": (DIST / path).stat().st_size, "sha256": hashlib.sha256((DIST / path).read_bytes()).hexdigest()}
                     for path in sorted(paths)]
         version = hashlib.sha256(json.dumps(manifest, separators=(",", ":")).encode()).hexdigest()
         write_json("distribution.json", {"version": version, "files": manifest})

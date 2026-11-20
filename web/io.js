@@ -12,12 +12,14 @@ export function localPath(path) {
     && path.split("/").every(part => part && part !== "." && part !== "..")
     && !/[?#:%]/.test(path) && !path.startsWith("/");
 }
-export async function fetchBytes(path) {
+export async function fetchBytes(path, {networkOnly = false} = {}) {
   if (!localPath(path)) return fail("invalid distribution path");
-  const response = await boundary(() => fetch("./" + path, {cache: "no-store"}));
-  if (!response.ok) return response;
-  if (!response.value.ok) return fail("配布データを取得できません: " + path);
-  return boundary(() => response.value.arrayBuffer());
+  const response = await boundary(() => fetch("./" + path, {cache: "no-store",
+    headers: networkOnly ? {"X-ReORSG-Redownload": "1"} : {}}));
+  if (!response.ok) return {...response, kind: "network", path};
+  if (!response.value.ok) return {...fail("配布データを取得できません: " + path), kind: response.value.status === 404 ? "missing" : "network", path};
+  const bytes = await boundary(() => response.value.arrayBuffer());
+  return bytes.ok ? bytes : {...bytes, kind: "network", path};
 }
 export async function opfsDirectory(parts, create = false) {
   let directory = await navigator.storage.getDirectory();
