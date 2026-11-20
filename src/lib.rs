@@ -10,3 +10,8 @@ pub mod checkpoint;
 pub mod quest_runtime;
 
 pub mod master_source;
+
+#[cfg(target_arch = "wasm32")]
+mod hca_audio;
+#[cfg(target_arch = "wasm32")]
+mod hca_keys;

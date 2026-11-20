@@ -1,0 +1,22 @@
+{
+  "repository": "https://github.com/vgmstream/vgmstream",
+  "commit": "7dc938fa2f210943b37c7b6511852b516ef432ab",
+  "files": [
+    {
+      "path": "src/meta/hca.c",
+      "sha256": "7bbcd4c24a04103c7a402b97ea863feab5910157e63989f8ad209944fad51be2"
+    },
+    {
+      "path": "src/meta/hca_keys.h",
+      "sha256": "cf45e1631d7d9a13cb97db4bc82e0877d7a8581cc40dfd23a2562ab2f0283dff"
+    },
+    {
+      "path": "src/coding/hca_decoder.c",
+      "sha256": "e92853b76017e684f43c33c2dde7de8bfcafb8993b85f4fd8337a24b36536822"
+    },
+    {
+      "path": "COPYING",
+      "sha256": "fcc26d35c4c4365e31f21734f846e4ee362ff0b57ba696085605a7b4768d8763"
+    }
+  ]
+}
