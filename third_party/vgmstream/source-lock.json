@@ -17,6 +17,14 @@
     {
       "path": "COPYING",
       "sha256": "fcc26d35c4c4365e31f21734f846e4ee362ff0b57ba696085605a7b4768d8763"
+    },
+    {
+      "path": "src/coding/adx_decoder.c",
+      "sha256": "5247f2faf95378ca703e4a692d9a23407671e0450fd2a06265ace18e13bbe94c"
+    },
+    {
+      "path": "src/meta/adx.c",
+      "sha256": "78846a66ef35c993dc96ff3e7dde2cebd36aa29e5876eb02b95cf3c074788b2a"
     }
   ]
 }

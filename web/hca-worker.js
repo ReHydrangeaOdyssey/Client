@@ -1,3 +1,4 @@
+import {AdxStream} from "./adx-decoder.js";
 import initialize, {HcaStream} from "./pkg/reorsg_client.js";
 const ready=initialize();let stream=null;
 self.onmessage=async event=>{
@@ -5,7 +6,7 @@ self.onmessage=async event=>{
   try {
     await ready;
     if(type==="open") {
-      stream?.free();stream=new HcaStream(new Uint8Array(event.data.bytes),event.data.cachedKey??"",event.data.subkey??0);
+      stream?.free();stream=event.data.codec==="adx"?new AdxStream(event.data.bytes):new HcaStream(new Uint8Array(event.data.bytes),event.data.cachedKey??"",event.data.subkey??0);
       self.postMessage({id,ok:true,value:{sampleRate:stream.sample_rate(),verifiedKey:stream.verified_key()}});
     } else if(type==="pull") {
       if(!stream)throw new Error("HCA stream not open");

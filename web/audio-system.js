@@ -23,13 +23,15 @@ function cacheId(filename,hash) {
 }
 async function keyCache() {
   try {const directory=await opfsDirectory(["cache","temp","decode"]);const file=await(await directory.getFileHandle("keys.json")).getFile();
-    const value=JSON.parse(await file.text());if(value.schema_version!==1||!value.entries||typeof value.entries!=="object")return {schema_version:1,entries:{}};return value;
+    const value=JSON.parse(await file.text());if(value.schema_version!==1||!value.entries||typeof value.entries!=="object"||Array.isArray(value.entries))return {schema_version:1,entries:{}};return value;
   }catch(error){if(error.name!=="NotFoundError"&&!(error instanceof SyntaxError))throw error;return {schema_version:1,entries:{}};}
 }
-async function saveKey(id,filename,hash,key) {
+async function saveKey(id,filename,hash,key,expected) {
   if(!navigator.locks)return;
   await navigator.locks.request("reorsg-hca-key-cache",async()=>{
-    const value=await keyCache();value.entries[id]={filename,sha256:hash,key_decimal:key};
+    const value=await keyCache();
+    if(key)value.entries[id]={filename,sha256:hash,key_decimal:key};
+    else {if(value.entries[id]?.key_decimal!==expected)return;delete value.entries[id];}
     const directory=await opfsDirectory(["cache","temp","decode"],true);
     await writeFile(directory,"keys.json",new TextEncoder().encode(JSON.stringify(value)));
   });
@@ -41,18 +43,21 @@ export class AudioSystem {
   async prepare(data,assets) {
     const loaded=await assets.bytes(data.file);return this.prepareBytes(loaded.bytes,loaded.hash,data.file.split('/').at(-1));
   }
-  async prepareBytes(bytes,hash,filename) {
+  async prepareBytes(bytes,hash,filename,codec="hca") {
     const id=cacheId(filename,hash),cache=await keyCache(),entry=cache.entries[id];
     const cached=entry?.filename===filename&&entry?.sha256===hash&&/^(0|[1-9][0-9]*)$/.test(entry.key_decimal)?entry.key_decimal:"";
     const worker=new HcaWorker();
     try {
-      const copy=bytes.slice(0),info=await worker.request("open",{bytes:copy,cachedKey:cached},[copy]);
+      const copy=bytes.slice(0),info=await worker.request("open",{bytes:copy,cachedKey:cached,codec},[copy]);
       const first=await worker.request("pull");validatePcm(first.pcm,info.sampleRate);
       if(info.verifiedKey)await saveKey(id,filename,hash,info.verifiedKey);
-      let disposed=false;
-      return {hash,sampleRate:info.sampleRate,dispose(){disposed=true;},
-        async open(){if(disposed)throw new Error("Audio resource disposed");const session=new HcaWorker(),copy=bytes.slice(0);
-          try{await session.request("open",{bytes:copy,cachedKey:info.verifiedKey},[copy]);return session;}catch(error){session.close();throw error;}}};
+      else if(cached)await saveKey(id,filename,hash,null,cached);
+      return {hash,sampleRate:info.sampleRate,dispose(){ /* Immutable compressed bytes are released when all Scene/playback references are gone. */ },
+        async open(){const session=new HcaWorker(),copy=bytes.slice(0);
+          try{await session.request("open",{bytes:copy,cachedKey:info.verifiedKey,codec},[copy]);return session;}catch(error){session.close();throw error;}}};
+    }catch(error){
+      if(cached)await saveKey(id,filename,hash,null,cached);
+      throw error;
     }finally{worker.close();}
   }
   unlock() {
@@ -87,14 +92,14 @@ export class AudioSystem {
             if(part.pcm.length){const length=part.pcm.length/2,buffer=context.createBuffer(2,length,resource.sampleRate);
               for(let channel=0;channel<2;channel++){const target=buffer.getChannelData(channel);for(let i=0;i<length;i++)target[i]=part.pcm[i*2+channel];}
               const node=context.createBufferSource();node.buffer=buffer;node.connect(gain);playback.nodes.add(node);node.onended=()=>{playback.nodes.delete(node);node.disconnect();};
-              next=Math.max(next,context.currentTime);node.start(next);next+=length/resource.sampleRate;}
+              next=Math.max(next,context.currentTime);playback.startedAt??=next;node.start(next);next+=length/resource.sampleRate;}
             if(part.eof){if(kind==="bgm")await playback.worker.request("reset");else eof=true;}}
           playback.timer=setTimeout(pump,25);
         }catch(error){if(!playback.stopped)this.onError(error.message);playback.stop();}
       };
-      await pump();return {ok:true};
+      await pump();return {ok:true,playback};
     }catch(error){playback.stop();throw error;}
   }
   destroy(){this.pendingBgm=null;for(const p of [...this.playbacks])p.stop();this.context?.close();}
 }
-function validatePcm(pcm,rate){if(!(pcm instanceof Float32Array)||pcm.length%2||rate!==22050||pcm.some(v=>!Number.isFinite(v)))throw new Error("Invalid worker PCM");}
+function validatePcm(pcm,rate){if(!(pcm instanceof Float32Array)||pcm.length%2||!Number.isInteger(rate)||rate<=0||pcm.some(v=>!Number.isFinite(v)))throw new Error("Invalid worker PCM");}
