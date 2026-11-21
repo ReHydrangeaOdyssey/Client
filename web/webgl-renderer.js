@@ -5,8 +5,8 @@ in vec2 position; in vec2 uv; out vec2 texcoord;
 void main(){gl_Position=vec4(position,0.,1.);texcoord=uv;}`;
 const FRAGMENT=`#version 300 es
 precision highp float; uniform sampler2D image; uniform vec4 patchUV;
-uniform bool tiled; in vec2 texcoord; out vec4 color;
-void main(){vec2 uv=tiled?mix(patchUV.xy,patchUV.zw,fract(texcoord)):texcoord;color=texture(image,uv);}`;
+uniform vec4 tint; uniform bool tiled; in vec2 texcoord; out vec4 color;
+void main(){vec2 uv=tiled?mix(patchUV.xy,patchUV.zw,fract(texcoord)):texcoord;color=texture(image,uv)*tint;}`;
 export class WebGLRenderer {
   constructor(canvas, onError=()=>{}) {
     this.canvas=canvas; this.onError=onError; this.nodes=[]; this.textures=new Map();
@@ -52,7 +52,7 @@ export class WebGLRenderer {
   }
   prepareImages(images) {if(this.lost)throw new Error("WebGL context lost");for(const image of images)this.texture(image);}
   release(image) {const texture=this.textures.get(image);if(texture)this.gl.deleteTexture(texture);this.textures.delete(image);}
-  setNodes(nodes) {this.nodes=nodes;this.draw();}
+  setNodes(nodes) {this.nodes=nodes;this.draw(true);}
   layout() {
     const rect=this.canvas.getBoundingClientRect(), style=getComputedStyle(this.canvas);
     const inset={};for(const side of ["left","right","top","bottom"])inset[side]=parseFloat(style.getPropertyValue("--safe-"+side))||0;
@@ -69,7 +69,7 @@ export class WebGLRenderer {
       const bottom=Math.min(r.y+r.height,v.cy-c.y*v.scale);r={x,y,width:Math.max(0,right-x),height:Math.max(0,bottom-y)};}
     return r;
   }
-  draw() {
+  draw(propagate=false) {
     if(this.lost)return;
     try {
       this.layout();const gl=this.gl;gl.viewport(0,0,this.canvas.width,this.canvas.height);
@@ -77,13 +77,16 @@ export class WebGLRenderer {
       if(!this.view)return;
       gl.useProgram(this.program);gl.bindVertexArray(this.vao);gl.activeTexture(gl.TEXTURE0);
       for(const node of this.nodes)if(node.visible!==false)this.drawNode(node);
-    } catch(error){this.onError(error.message);}
+      if(gl.getError()!==gl.NO_ERROR)throw new Error("WebGL draw failed");
+    } catch(error){if(propagate)throw error;this.onError(error.message);}
   }
   drawNode(node) {
     const gl=this.gl,v=this.view,clip=this.clip(node),dpr=this.canvas.width/this.rect.width;
     if(!clip.width||!clip.height)return;
     gl.enable(gl.SCISSOR_TEST);gl.scissor(Math.round(clip.x*dpr),Math.round((this.rect.height-clip.y-clip.height)*dpr),Math.round(clip.width*dpr),Math.round(clip.height*dpr));
-    const g=node.geometry;
+    const g=node.geometry,blend=node.blend??[770,771];
+    gl.blendFunc(blend[0],blend[1]);gl.uniform4fv(gl.getUniformLocation(this.program,"tint"),node.tint??[1,1,1,1]);
+    if(node.matrix[0]*node.matrix[3]-node.matrix[1]*node.matrix[2]===0)return;
     gl.bindTexture(gl.TEXTURE_2D,this.texture(node.image));gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);
     for(const p of g.patches){
       const vertices=[];
