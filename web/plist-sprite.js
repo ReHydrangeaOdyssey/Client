@@ -36,10 +36,16 @@ async function atlasImage(plist,source,assets) {
     if(embedded===undefined&&container?.[key]!==undefined)embedded=container[key];
   if(source.texture==="embedded"||source.texture===undefined&&embedded!==undefined) {if(embedded===undefined)throw new Error("Embedded atlas image missing");return embeddedImage(embedded);}
   if(embedded!==undefined)throw new Error("Atlas storage disagrees with explicit external source");
-  const name=source.image??plist.metadata?.realTextureFileName??plist.metadata?.textureFileName??source.plist.split("/").at(-1).replace(/\.plist$/,".png");
-  if(typeof name!=="string"||!localPath(name))throw new Error("External atlas reference is unresolved");
-  const directory=source.plist.slice(0,source.plist.lastIndexOf('/')+1);
-  return assets.image({file:directory+name});
+  const directory=source.plist.slice(0,source.plist.lastIndexOf('/')+1),stem=source.plist.split("/").at(-1).replace(/\.plist$/,"");
+  const names=[source.image,plist.metadata?.realTextureFileName,plist.metadata?.textureFileName,...["png","jpg"].map(ext=>stem+"."+ext)].filter(v=>v!==undefined);
+  for(const name of names){
+    if(typeof name!=="string"||!localPath(name))throw new Error("Unsafe external atlas reference");
+    const file=directory+name,extension=name.split(".").at(-1);
+    if(!["png","jpg"].includes(extension))throw new Error("Unsupported external atlas image format");
+    if(assets.paths&&!(await assets.paths(extension,true)).has(file.slice(9)))continue;
+    return assets.image({file});
+  }
+  throw new Error("External atlas reference is unresolved");
 }
 function geometry(frame) {
   const {rect,key}=frameRect(frame);
