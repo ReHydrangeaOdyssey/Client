@@ -19,12 +19,25 @@ async function open(blob,keyHex) {
   if(m.mpeg_codec===5){const nal=h264Packet(initial[0].data);if(!nal.codec||!nal.pps||!nal.key)throw new Error("H264 SPS/PPS/IDR required");config.codec=nal.codec;}
   const supported=await VideoDecoder.isConfigSupported(config);if(!supported.supported)throw new Error("USM video codec unavailable on this browser");config=supported.config;
   let proof=0,failed=null;const probe=new VideoDecoder({output:frame=>{proof++;frame.close();},error:error=>{failed=error;}});
-  try{probe.configure(config);for(const frame of initial)probe.decode(new EncodedVideoChunk(frame));await probe.flush();if(failed||!proof)throw new Error("USM video packet/key verification failed");}
+  // An unchanged short packet cannot prove a mask key; include the first packet that the mask can affect.
+  const maskedPacket=source.video.packets.findIndex(p=>p.end-p.start>=0x240),lastProbe=Math.max(0,maskedPacket);
+  try{
+    probe.configure(config);
+    for(let index=0;index<=lastProbe;index++){
+      const frames=index===0?initial:await chunks(index);
+      for(const frame of frames){
+        while(probe.decodeQueueSize>=4&&!failed)await new Promise(resolve=>probe.addEventListener("dequeue",resolve,{once:true}));
+        if(failed)throw new Error("USM video packet/key verification failed");
+        probe.decode(new EncodedVideoChunk(frame));
+      }
+    }
+    await probe.flush();if(failed||!proof)throw new Error("USM video packet/key verification failed");
+  }
   finally{if(probe.state!=="closed")probe.close();}
   let audio=null;
-  if(source.audio?.metadata&&source.audio.packets.length){const a=source.audio;audio={codec:a.metadata.audio_codec,blob:new Blob(a.packets.map(p=>source.blob.slice(p.start,p.end)))};}
+  if(source.audio?.metadata&&source.audio.packets.length){const a=source.audio;audio={codec:a.metadata.audio_codec,sampleRate:a.metadata.sampling_rate,channels:a.metadata.num_channels,blob:new Blob(a.packets.map(p=>source.blob.slice(p.start,p.end)))};}
   packet=0;pendingFrames=0;ended=false;
-  return {width:m.width,height:m.height,audio,ignored:source.ignored};
+  return {width:m.width,height:m.height,audio,ignored:source.ignored,decrypted:key!==null&&maskedPacket>=0};
 }
 async function pump() {
   if(pumping||!decoder||ended)return;pumping=true;const epoch=generation;
@@ -40,10 +53,11 @@ self.onmessage=async event=>{
   const {id,type}=event.data;
   try {
     if(type==="open") {
+      if(event.data.trustedKeys!==undefined&&!Array.isArray(event.data.trustedKeys))throw new Error("Invalid trusted USM key candidates");
       const candidates=event.data.keyHex?[event.data.keyHex]:[null,...(event.data.trustedKeys??[])];
       if(!Array.isArray(candidates)||candidates.some(key=>key!==null&&!/^[a-fA-F0-9]{16}$/.test(key)))throw new Error("Invalid trusted USM key candidates");
       let value=null;
-      for(const candidate of candidates){try{value=await open(event.data.blob,candidate);value.decrypted=candidate!==null;break;}catch{shutdown();}}
+      for(const candidate of candidates){try{value=await open(event.data.blob,candidate);break;}catch{shutdown();}}
       if(!value)throw new Error("USM codec or key verification failed");
       self.postMessage({id,ok:true,value});
     }

@@ -23,7 +23,7 @@ function cacheId(filename,hash) {
 }
 async function keyCache() {
   try {const directory=await opfsDirectory(["cache","temp","decode"]);const file=await(await directory.getFileHandle("keys.json")).getFile();
-    const value=JSON.parse(await file.text());if(value.schema_version!==1||!value.entries||typeof value.entries!=="object"||Array.isArray(value.entries))return {schema_version:1,entries:{}};return value;
+    const value=JSON.parse(await file.text());if(!value||value.schema_version!==1||!value.entries||typeof value.entries!=="object"||Array.isArray(value.entries))return {schema_version:1,entries:{}};return value;
   }catch(error){if(error.name!=="NotFoundError"&&!(error instanceof SyntaxError))throw error;return {schema_version:1,entries:{}};}
 }
 async function saveKey(id,filename,hash,key,expected) {
@@ -52,7 +52,7 @@ export class AudioSystem {
       const first=await worker.request("pull");validatePcm(first.pcm,info.sampleRate);
       if(info.verifiedKey)await saveKey(id,filename,hash,info.verifiedKey);
       else if(cached)await saveKey(id,filename,hash,null,cached);
-      return {hash,sampleRate:info.sampleRate,dispose(){ /* Immutable compressed bytes are released when all Scene/playback references are gone. */ },
+      return {hash,sampleRate:info.sampleRate,channels:info.channels,dispose(){ /* Immutable compressed bytes are released when all Scene/playback references are gone. */ },
         async open(){const session=new HcaWorker(),copy=bytes.slice(0);
           try{await session.request("open",{bytes:copy,cachedKey:info.verifiedKey,codec},[copy]);return session;}catch(error){session.close();throw error;}}};
     }catch(error){
@@ -97,7 +97,7 @@ export class AudioSystem {
           playback.timer=setTimeout(pump,25);
         }catch(error){if(!playback.stopped)this.onError(error.message);playback.stop();}
       };
-      await pump();return {ok:true,playback};
+      await pump();return playback.stopped?{ok:false,error:"audio_output_failed"}:{ok:true,playback};
     }catch(error){playback.stop();throw error;}
   }
   destroy(){this.pendingBgm=null;for(const p of [...this.playbacks])p.stop();this.context?.close();}

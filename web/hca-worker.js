@@ -6,8 +6,9 @@ self.onmessage=async event=>{
   try {
     await ready;
     if(type==="open") {
+      if(event.data.codec!==undefined&&!["hca","adx"].includes(event.data.codec))throw new Error("Unsupported audio codec");
       stream?.free();stream=event.data.codec==="adx"?new AdxStream(event.data.bytes):new HcaStream(new Uint8Array(event.data.bytes),event.data.cachedKey??"",event.data.subkey??0);
-      self.postMessage({id,ok:true,value:{sampleRate:stream.sample_rate(),verifiedKey:stream.verified_key()}});
+      self.postMessage({id,ok:true,value:{sampleRate:stream.sample_rate(),channels:event.data.codec==="adx"?stream.channels:stream.channel_count(),verifiedKey:stream.verified_key()}});
     } else if(type==="pull") {
       if(!stream)throw new Error("HCA stream not open");
       const blocks=[];let length=0;

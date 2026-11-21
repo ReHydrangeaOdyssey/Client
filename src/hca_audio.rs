@@ -166,6 +166,9 @@ impl HcaStream {
     pub fn verified_key(&self) -> String {
         self.key.map(|key| key.to_string()).unwrap_or_default()
     }
+    pub fn channel_count(&self) -> u32 {
+        self.decoder.info().channel_count
+    }
     pub fn sample_rate(&self) -> u32 {
         self.decoder.info().sampling_rate
     }

@@ -26,7 +26,10 @@ export class UsmPlayer {
       try {
         if(![2,4].includes(info.audio.codec))throw new Error("Unsupported USM audio codec");
         const bytes=await info.audio.blob.arrayBuffer();
-        this.audioResource=await this.audio.prepareBytes(bytes,await digest(bytes),"usm-audio",info.audio.codec===2?"adx":"hca");this.audioStatus="ready";
+        this.audioResource=await this.audio.prepareBytes(bytes,await digest(bytes),"usm-audio",info.audio.codec===2?"adx":"hca");if(this.audioResource.sampleRate!==info.audio.sampleRate||this.audioResource.channels!==info.audio.channels){
+          this.audioResource.dispose();this.audioResource=null;throw new Error("USM audio metadata disagrees with decoded header");
+        }
+        this.audioStatus="ready";
       }catch(error){this.audioStatus="failed";this.onStatus({audio:"failed",reason:error.message});}
     }
     if(epoch!==this.epoch){this.audioResource?.dispose();throw new Error("USM request cancelled");}
