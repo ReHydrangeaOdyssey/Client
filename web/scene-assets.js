@@ -1,3 +1,4 @@
+import {decodeAnimation} from "./animation-assets.js";
 import {decodePlistSprite} from "./plist-sprite.js";
 import {digest, localPath, opfsDirectory} from "./io.js";
 
@@ -29,27 +30,35 @@ export function dictionaryPaths(data, extension) {
 }
 export class SceneAssets {
   constructor({spriteDecoder,animationDecoder,audioDecoder}={}) {
-    this.spriteDecoder=spriteDecoder??decodePlistSprite;this.animationDecoder=animationDecoder;this.audioDecoder=audioDecoder;
+    this.spriteDecoder=spriteDecoder??decodePlistSprite;this.animationDecoder=animationDecoder??decodeAnimation;this.audioDecoder=audioDecoder;
     this.dictionaries=new Map();
   }
   async readFile(parts) {
     const directory=await opfsDirectory(parts.slice(0,-1));
     return (await directory.getFileHandle(parts.at(-1))).getFile();
   }
-  async bytes(file) {
-    if(typeof file!=="string"||!file.startsWith("./assets/")||!safeAsset(file.slice(9)))throw new Error("Unsafe Scene asset path");
-    const path=file.slice(9), extension=path.split('.').at(-1);
-    if(!EXTENSIONS.includes(extension))throw new Error("Unsupported asset extension: "+extension);
+  async paths(extension,optional=false) {
     if(!this.dictionaries.has(extension)) {
       let dictionary;
       try {dictionary=await this.readFile(["asset_dictionary",extension,"assets_dict.json"]);}
-      catch(error){throw new Error("AssetDictionary unavailable: "+extension+" ("+error.name+")");}
+      catch(error){if(optional&&error.name==="NotFoundError")return new Set();throw new Error("AssetDictionary unavailable: "+extension+" ("+error.name+")");}
       this.dictionaries.set(extension,dictionaryPaths(JSON.parse(await dictionary.text()),extension));
     }
+    return this.dictionaries.get(extension);
+  }
+  async file(file) {
+    if(typeof file!=="string"||!file.startsWith("./assets/")||!safeAsset(file.slice(9)))throw new Error("Unsafe Scene asset path");
+    const path=file.slice(9), extension=path.split('.').at(-1);
+    if(!EXTENSIONS.includes(extension))throw new Error("Unsupported asset extension: "+extension);
+    await this.paths(extension);
     if(!this.dictionaries.get(extension).has(path))throw new Error("Asset path is not allowed by dictionary: "+file);
     const blob=await this.readFile(["assets",...path.split('/')]);
     if(!blob.size)throw new Error("Empty asset: "+file);
-    const bytes=await blob.arrayBuffer();return {bytes,hash:await digest(bytes),extension};
+    return blob;
+  }
+  async bytes(file) {
+    const blob=await this.file(file),bytes=await blob.arrayBuffer();
+    return {bytes,hash:await digest(bytes),extension:file.split('.').at(-1)};
   }
   async image(data) {
     if(data.source) {
