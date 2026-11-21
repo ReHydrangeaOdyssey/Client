@@ -9,3 +9,10 @@ button { font: inherit; color: inherit; background: #30486b; border: 1px solid #
 #loading { position: absolute; inset: 0; background: rgba(0, 0, 0, .5); display: grid; align-content: center; justify-items: center; }
 #loading img { width: 80px; height: 80px; }
 #error { position: absolute; bottom: 20px; left: 20px; right: 20px; padding: 16px; background: #351f2b; }
+
+#scene {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
