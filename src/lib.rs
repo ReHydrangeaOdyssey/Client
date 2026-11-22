@@ -10,6 +10,7 @@ pub mod checkpoint;
 pub mod quest_runtime;
 
 pub mod master_source;
+pub mod skill_code;
 
 #[cfg(target_arch = "wasm32")]
 mod hca_audio;
