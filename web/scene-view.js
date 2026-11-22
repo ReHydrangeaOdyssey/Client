@@ -1,16 +1,39 @@
+import {sceneVisibility} from "./scene-visibility.js";
+import {SceneInput} from "./scene-input.js";
 import {multiply} from "./sprite-animation.js";
 import {UsmPlayer} from "./usm-player.js";
-import {boundary, fail, ok} from "./io.js";
+import {fail, ok} from "./io.js";
 import {transform, imageGeometry, windowGeometry} from "./scene-geometry.js";
 
 export class SceneView {
-  constructor(renderer, assets, {setLoading=()=>{},onError=()=>{},checkEntry=()=>ok(null),isCurrent=()=>true,audio=null}={}) {
-    this.renderer=renderer;this.assets=assets;this.setLoadingUI=setLoading;this.onError=onError;
-    this.checkEntry=checkEntry;this.isCurrent=isCurrent;this.current=null;this.loading=false;this.sequence=0;
-    this.audio=audio;this.videos=new Set();this.dynamic=new Map();
-    this.listeners=[];this.installInput();
+  constructor(renderer, assets, {
+    setLoading = () => {},
+    onError = () => {},
+    checkEntry = () => ok(null),
+    isCurrent = () => true,
+    audio = null,
+  } = {}) {
+    this.renderer = renderer;
+    this.assets = assets;
+    this.setLoadingUI = setLoading;
+    this.onError = onError;
+    this.checkEntry = checkEntry;
+    this.isCurrent = isCurrent;
+    this.current = null;
+    this.loading = false;
+    this.sequence = 0;
+    this.audio = audio;
+    this.videos = new Set();
+    this.dynamic = new Map();
+    this.input = new SceneInput(this);
   }
-  setLoading(value){this.loading=value;this.cancelPointer();this.setLoadingUI(value);}
+
+  setLoading(value) {
+    this.loading = value;
+    this.cancelPointer();
+    this.setLoadingUI(value);
+  }
+
   async prepare(scene,ticket) {
     const state={scene,ticket,models:new Map(),ready:new Set(),images:new Set(),animations:new Set(),audio:new Map(),disposed:false,groups:new Map(),overrides:new Map()};
     try {
@@ -104,28 +127,9 @@ export class SceneView {
     this.presentation(state);
   }
   presentation(state) {
-    const visible=new Map(),groups=new Map(),visiting=new Set(),hide=new Map(),show=new Map();
-    for(const model of state.models.values())if(model.kind==="toggle button")for(const event of model.data.events??[]){
-      const map=event.type==="hide"?hide:event.type==="show_scroll_group"?show:null;
-      if(map){const key=event.target??event.group;const triggers=map.get(key)??[];triggers.push(model);map.set(key,triggers);}
-    }
-    const active=model=>model.on&&isVisible(model.ref);
-    const groupVisible=name=>{
-      if(groups.has(name))return groups.get(name);
-      const key="group:"+name;if(visiting.has(key))throw new Error("Cyclic Scene visibility");visiting.add(key);
-      const triggers=show.get(name),value=state.overrides.get(name)??(!triggers||triggers.some(active));
-      visiting.delete(key);groups.set(name,value);return value;
-    };
-    const isVisible=ref=>{
-      if(visible.has(ref))return visible.get(ref);
-      if(visiting.has(ref))throw new Error("Cyclic Scene visibility");visiting.add(ref);
-      const m=state.models.get(ref);
-      const value=(!m.parent||active(state.models.get(m.parent)))&&!(hide.get(ref)??[]).some(active)&&(!m.group||groupVisible(m.group));
-      visiting.delete(ref);visible.set(ref,value);return value;
-    };
-    for(const ref of state.models.keys())isVisible(ref);
-    for(const name of state.groups.keys())groupVisible(name);
-    state.groupVisibility=groups;return visible;
+    const {visible, groupVisibility} = sceneVisibility(state);
+    state.groupVisibility = groupVisibility;
+    return visible;
   }
   refresh() {
     const state=this.current;if(!state||state.disposed)return;
@@ -135,9 +139,7 @@ export class SceneView {
       if(model.animation&&visible.get(model.ref)){
         if(model.started===undefined){
           model.started=performance.now();
-          if(model.data.se)state.audio.get("se."+model.data.se)?.then(resource=>{
-            if(resource&&this.current===state&&!state.disposed)this.audio?.play(resource,"se").catch(error=>this.onError(error.message));
-          });
+          if(model.data.se)this.playAudio(state,"se."+model.data.se,"se");
         }
         const evaluated=model.animation.evaluate((performance.now()-model.started)/1000);
         running||=!evaluated.finished;
@@ -167,9 +169,7 @@ export class SceneView {
     this.audio?.transition();
     if(old)this.dispose(old);
     const bgms=Object.keys(state.scene.assets.bgm);
-    if(bgms.length===1)state.audio.get("bgm."+bgms[0])?.then(resource=>{
-      if(resource&&this.current===state&&!state.disposed)this.audio?.play(resource,"bgm").catch(error=>this.onError(error.message));
-    });
+    if(bgms.length===1)this.playAudio(state,"bgm."+bgms[0],"bgm");
     for(const model of state.models.values())if(model.error)this.onError(model.ref+": "+model.error);
     return ok(null);
   }
@@ -219,46 +219,15 @@ export class SceneView {
     this.refresh();
     return ok(null);
   }
-  cancelPointer() {
-    const pointer=this.pointer;this.pointer=null;
-    if(pointer&&this.renderer.canvas.hasPointerCapture(pointer.id))this.renderer.canvas.releasePointerCapture(pointer.id);
-    if(pointer&&this.current)this.refresh();
-  }
-  installInput() {
-    const canvas=this.renderer.canvas;
-    const listen=(type,handler)=>{canvas.addEventListener(type,handler);this.listeners.push([type,handler]);};
-    listen("pointerdown",event=>{
-      if(this.loading||this.toggleBusy||this.pointer||event.button!==0||this.renderer.lost)return;
-      this.audio?.unlock().catch(error=>this.onError(error.message));
-      const hits=this.renderer.nodes.filter(n=>n.interactive&&this.renderer.hit(n,event.clientX,event.clientY));
-      if(hits.length!==1)return;
-      this.pointer={id:event.pointerId,ref:hits[0].ref,state:this.current};
-      canvas.setPointerCapture(event.pointerId);this.refresh();
+  get pointer() { return this.input.pointer; }
+  cancelPointer() { this.input.cancel(); }
+
+  playAudio(state, reference, kind) {
+    state.audio.get(reference)?.then(resource => {
+      if (resource && this.current === state && !state.disposed) {
+        this.audio?.play(resource, kind).catch(error => this.onError(error.message));
+      }
     });
-    listen("pointermove",event=>{if(this.pointer?.id!==event.pointerId)return;
-      const node=this.renderer.nodes.find(n=>n.ref===this.pointer.ref);
-      if(!node?.interactive||!this.renderer.hit(node,event.clientX,event.clientY))this.cancelPointer();});
-    listen("pointerup",event=>{
-      const pointer=this.pointer;if(pointer?.id!==event.pointerId)return;
-      const node=this.renderer.nodes.find(n=>n.ref===pointer.ref);
-      const valid=!this.loading&&!this.toggleBusy&&!this.renderer.lost&&pointer.state===this.current&&node?.interactive&&this.renderer.hit(node,event.clientX,event.clientY);
-      this.cancelPointer();if(!valid)return;
-      const model=this.current.models.get(pointer.ref),activationId=++this.sequence;
-      const audioState=this.current;
-      if(model.data.se)audioState.audio.get("se."+model.data.se)?.then(resource=>{
-        if(resource&&this.current===audioState&&!audioState.disposed)this.audio?.play(resource,"se").catch(error=>this.onError(error.message));
-      });
-      const action=model.kind==="toggle button"?this.toggle(pointer.ref):this.activate?.(pointer.ref,activationId);
-      Promise.resolve(action).then(result=>{if(result&&!result.ok)this.onError(result.error);}).catch(error=>this.onError(error.message));
-    });
-    listen("wheel",event=>{
-      if(this.loading||!this.current||!this.renderer.view||event.deltaMode!==0)return;
-      const v=this.renderer.view,r=canvas.getBoundingClientRect(),x=(event.clientX-r.left-v.cx)/v.scale,y=(v.cy-event.clientY+r.top)/v.scale;
-      const groups=[...this.current.groups.entries()].filter(([name,g])=>this.current.groupVisibility.get(name)&&Math.abs(x-g.px)<=g.width/2&&Math.abs(y-g.py)<=g.height/2);
-      if(groups.length!==1)return;const [name,g]=groups[0];
-      this.scroll(name,g.x+event.deltaX/v.scale,g.y+event.deltaY/v.scale);event.preventDefault();
-    });
-    for(const type of ["pointercancel","lostpointercapture"])listen(type,event=>{if(this.pointer?.id===event.pointerId)this.cancelPointer();});
   }
   async playVideo(file,placement,layer,options={}) {
     if(!this.current||!this.audio||!Number.isInteger(layer)||layer<0)throw new Error("Video placement is required");
@@ -277,5 +246,15 @@ export class SceneView {
     try{await player.prepare(await this.assets.file(file),options);this.videos.add(player);if(this.current!==state||state.disposed)throw new Error("Stale video request");await player.play();return player;}
     catch(error){player.stop();this.videos.delete(player);throw error;}
   }
-  destroy(){cancelAnimationFrame(this.animationFrame);this.animationFrame=null;for(const video of [...this.videos])video.stop();this.videos.clear();this.dynamic.clear();this.cancelPointer();for(const [type,handler] of this.listeners)this.renderer.canvas.removeEventListener(type,handler);if(this.current)this.dispose(this.current);this.current=null;this.renderer.destroy();}
+  destroy() {
+    cancelAnimationFrame(this.animationFrame);
+    this.animationFrame = null;
+    for (const video of [...this.videos]) video.stop();
+    this.videos.clear();
+    this.dynamic.clear();
+    this.input.destroy();
+    if (this.current) this.dispose(this.current);
+    this.current = null;
+    this.renderer.destroy();
+  }
 }
