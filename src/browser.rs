@@ -44,3 +44,54 @@ pub fn validate_skill_sources(text: &str) -> String {
         Ok(json!({"record_count": records.len()}))
     })())
 }
+
+#[wasm_bindgen]
+pub fn encode_public_request(name: &str, input: &str) -> String {
+    response(
+        crate::public_api_codec::encode(name, input)
+            .map(|bytes| json!(bytes))
+            .map_err(|_| "invalid_api_request".to_string()),
+    )
+}
+
+#[wasm_bindgen]
+pub fn decode_public_response(name: &str, bytes: &[u8]) -> String {
+    response(crate::public_api_codec::decode(name, bytes))
+}
+
+#[wasm_bindgen]
+pub async fn fetch_public_rpc(
+    origin: &str,
+    method: &str,
+    bytes: &[u8],
+    token: Option<String>,
+    signal: web_sys::AbortSignal,
+) -> Result<web_sys::Response, JsValue> {
+    use wasm_bindgen_futures::JsFuture;
+    use web_sys::{
+        Request, RequestCache, RequestCredentials, RequestInit, RequestMode, RequestRedirect,
+    };
+
+    let options = RequestInit::new();
+    options.set_method("POST");
+    options.set_mode(RequestMode::Cors);
+    options.set_credentials(RequestCredentials::Omit);
+    options.set_cache(RequestCache::NoStore);
+    options.set_redirect(RequestRedirect::Error);
+    options.set_signal(Some(&signal));
+    options.set_body(&js_sys::Uint8Array::from(bytes));
+    let request =
+        Request::new_with_str_and_init(&format!("{origin}/v1/public/{method}"), &options)?;
+    request
+        .headers()
+        .set("Content-Type", "application/x-protobuf")?;
+    if let Some(token) = token {
+        request
+            .headers()
+            .set("Authorization", &format!("Bearer {token}"))?;
+    }
+    let window = web_sys::window().ok_or_else(|| JsValue::from_str("window_unavailable"))?;
+    JsFuture::from(window.fetch_with_request(&request))
+        .await?
+        .dyn_into()
+}

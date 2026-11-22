@@ -16,3 +16,5 @@ pub mod skill_code;
 mod hca_audio;
 #[cfg(target_arch = "wasm32")]
 mod hca_keys;
+
+pub mod public_api_codec;
