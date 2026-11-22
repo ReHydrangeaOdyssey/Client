@@ -1,0 +1,58 @@
+name: WASM size
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wasm-size:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out Client and GameLogic
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install Rust WASM target
+        run: rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+
+      - name: Build release WASM
+        run: cargo +stable build --locked --release --target wasm32-unknown-unknown
+
+      - name: Install matching wasm-bindgen CLI
+        shell: bash
+        run: |
+          version="$(python3 -c 'import pathlib, tomllib; lock = tomllib.loads(pathlib.Path("Cargo.lock").read_text()); print(next(p["version"] for p in lock["package"] if p["name"] == "wasm-bindgen"))')"
+          cargo +stable install wasm-bindgen-cli --version "$version" --locked
+
+      - name: Generate distribution WASM
+        run: |
+          wasm-bindgen --target web --no-typescript --out-dir dist/pkg \
+            target/wasm32-unknown-unknown/release/reorsg_client.wasm
+
+      - name: Enforce 25 MB uncompressed WASM limit
+        shell: python
+        run: |
+          import pathlib
+          import sys
+
+          MAX_WASM_BYTES = 25_000_000
+          output = pathlib.Path("dist/pkg")
+          expected = output / "reorsg_client_bg.wasm"
+          if not expected.is_file():
+              sys.exit("::error::Distribution WASM is missing")
+
+          failed = False
+          for path in sorted(output.rglob("*.wasm")):
+              size = path.stat().st_size
+              print(f"{path}: {size:,} bytes / {MAX_WASM_BYTES:,} bytes")
+              if size == 0 or size > MAX_WASM_BYTES:
+                  print(f"::error file={path}::WASM must be non-empty and at most {MAX_WASM_BYTES} bytes; got {size}")
+                  failed = True
+          sys.exit(1 if failed else 0)

@@ -1,0 +1,3 @@
+
+# Preserve byte-exact pinned upstream sources and their recorded SHA-256.
+third_party/vgmstream/** -text whitespace=-blank-at-eol
