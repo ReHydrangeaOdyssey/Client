@@ -147,14 +147,14 @@ export class SceneView {
       }
       const key=model.kind==="button"?(this.pointer?.ref===model.ref?"on push":"idle"):model.kind==="toggle button"?(model.on?"on":"off"):"normal";
       const sprite=model.states.get(key);if(!sprite||!visible.get(model.ref))continue;
-      const node={...sprite,ref:model.ref,matrix:[...model.matrix],interactive:["button","toggle button"].includes(model.kind)};
+      const node={...sprite,ref:model.ref,matrix:[...model.matrix],interactive:model.enabled!==false&&["button","toggle button"].includes(model.kind)};
       this.applyScroll(state,model,node);
       nodes.push(node);
     }
     for(const [ref,item] of this.dynamic){nodes.splice(Math.min(item.layer,nodes.length),0,{...item.node,ref});}
     this.renderer.setNodes(nodes);
     if(running&&!this.animationFrame)this.animationFrame=requestAnimationFrame(()=>{this.animationFrame=null;try{this.refresh();}catch(error){this.onError(error.message);}});
-    if(this.pointer&&!nodes.some(n=>n.ref===this.pointer.ref))this.cancelPointer();
+    if(this.pointer&&!nodes.some(n=>n.ref===this.pointer.ref&&n.interactive))this.cancelPointer();
   }
   applyScroll(state,model,node) {
     if(model.group){const g=state.groups.get(model.group);node.matrix[4]-=g.x;node.matrix[5]+=g.y;node.clip={x:g.px-g.width/2,y:g.py-g.height/2,width:g.width,height:g.height};}
@@ -208,6 +208,17 @@ export class SceneView {
     // Explicit offsets preserve authored coordinates; no unspecified drag threshold or bounds are inferred.
     if(g.scroll_x)g.x=x;if(g.scroll_y)g.y=y;this.cancelPointer();this.refresh();return ok(null);
   }
+  setButtonEnabled(reference, enabled) {
+    const model = this.current?.models.get(reference);
+    if (typeof enabled !== "boolean" || !model
+        || !["button", "toggle button"].includes(model.kind)) {
+      return fail("Invalid button enable request");
+    }
+    model.enabled = enabled;
+    if (!enabled && this.pointer?.ref === reference) this.cancelPointer();
+    this.refresh();
+    return ok(null);
+  }
   cancelPointer() {
     const pointer=this.pointer;this.pointer=null;
     if(pointer&&this.renderer.canvas.hasPointerCapture(pointer.id))this.renderer.canvas.releasePointerCapture(pointer.id);
@@ -226,11 +237,11 @@ export class SceneView {
     });
     listen("pointermove",event=>{if(this.pointer?.id!==event.pointerId)return;
       const node=this.renderer.nodes.find(n=>n.ref===this.pointer.ref);
-      if(!node||!this.renderer.hit(node,event.clientX,event.clientY))this.cancelPointer();});
+      if(!node?.interactive||!this.renderer.hit(node,event.clientX,event.clientY))this.cancelPointer();});
     listen("pointerup",event=>{
       const pointer=this.pointer;if(pointer?.id!==event.pointerId)return;
       const node=this.renderer.nodes.find(n=>n.ref===pointer.ref);
-      const valid=!this.loading&&pointer.state===this.current&&node&&this.renderer.hit(node,event.clientX,event.clientY);
+      const valid=!this.loading&&!this.toggleBusy&&!this.renderer.lost&&pointer.state===this.current&&node?.interactive&&this.renderer.hit(node,event.clientX,event.clientY);
       this.cancelPointer();if(!valid)return;
       const model=this.current.models.get(pointer.ref),activationId=++this.sequence;
       const audioState=this.current;

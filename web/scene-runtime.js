@@ -42,6 +42,12 @@ export class SceneRuntime {
     this.#bindings.set(scene.scene + "/" + reference, handler);
     return ok(null);
   }
+  setButtonEnabled(scene, reference, enabled) {
+    if (this.loading || !scene || this.#active !== scene) {
+      return fail("stale Scene button update");
+    }
+    return this.#adapters.setButtonEnabled(reference, enabled);
+  }
   registerCondition(name, evaluate) {
     if (!/^[A-Za-z_]{1,128}$/.test(name) || typeof evaluate !== "function")
       return fail("invalid condition binding");
