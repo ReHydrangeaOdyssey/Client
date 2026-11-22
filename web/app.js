@@ -1,3 +1,4 @@
+import {ServerRuntime} from "./server-runtime.js";
 import {AudioSystem} from "./audio-system.js";
 import {SceneRuntime} from "./scene-runtime.js";
 import {SceneView} from "./scene-view.js";
@@ -12,6 +13,9 @@ const retry = document.querySelector("#retry");
 let starting = false;
 let activeView = null;
 let activeAudio = null;
+let activeRuntime = null;
+
+export function currentRuntime() { return activeRuntime; }
 
 async function initialize(networkOnly = false) {
   if (starting) return;
@@ -44,6 +48,8 @@ async function start(networkOnly) {
     return fail("シーンデータが未設定です。現仕様のシーン・素材データが揃うまでゲームを開始できません。");
   const indexBytes = await fetchBytes("assets/scene/scene_index.json");
   if (!indexBytes.ok) return indexBytes;
+  activeRuntime?.server.destroy();
+  activeRuntime = null;
   activeView?.destroy();
   activeAudio?.destroy();
   const showError = text => {
@@ -68,6 +74,8 @@ async function start(networkOnly) {
   if (!indexed.ok) { view.destroy(); activeView = null; return indexed; }
   const entered = await runtime.transition(config.entry_scene, distribution.value.version, 0);
   if (!entered.ok) { view.destroy(); activeView = null; return entered; }
+  runtime.server = new ServerRuntime(wasm, config);
+  activeRuntime = runtime;
   document.querySelector("#startup").hidden = true;
   return ok(runtime);
 

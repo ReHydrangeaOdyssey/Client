@@ -14,7 +14,11 @@ function base64url(bytes) {
 export class AuthorizationFlow {
   constructor(api, {
     clientOrigin,
-    storage = sessionStorage,
+    storage = {
+      getItem: key => sessionStorage.getItem(key),
+      setItem: (key, value) => sessionStorage.setItem(key, value),
+      removeItem: key => sessionStorage.removeItem(key),
+    },
     cryptoProvider = crypto,
     createAuthorizationUrl,
     decodeAuthorizationCode,
